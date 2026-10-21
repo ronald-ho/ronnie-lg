@@ -8,3 +8,4 @@ tools/ssap-key.json
 tools/askpass.sh
 tools/apps-now.json
 .DS_Store
+app/ssap-key.js

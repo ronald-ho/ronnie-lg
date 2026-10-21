@@ -34,7 +34,7 @@ function inspector() {
 
   try {
     if (cmd === 'eval') {
-      const r = await send('Runtime.evaluate', { expression: arg, returnByValue: true });
+      const r = await send('Runtime.evaluate', { expression: arg, returnByValue: true, awaitPromise: true });
       console.log(JSON.stringify(r.result.result.value));
     } else {
       for (const k of cmd.split(',')) {

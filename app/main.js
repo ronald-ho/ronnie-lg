@@ -1,54 +1,83 @@
 (function () {
   var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461 };
   var HOLD_MS = 600;
-  var STORE = 'home.dock.v1';
+  var STORE = 'home.dock.v2';
+  var ADD = '__add';
+  var ROW_PAD = 112;
 
   var byId = {};
   CATALOG.forEach(function (a) { byId[a.id] = a; });
 
   var dock = loadDock();
-  var rows = [document.querySelector('#dock'), document.querySelector('#more')];
+  var rowEls = [document.getElementById('dock'), document.getElementById('tv')];
   var row = 0, col = [0, 0], shift = [0, 0];
-  var moving = false;          // dock reorder mode
-  var okDownAt = 0, holdTimer = null, holdFired = false;
-  var tints = {};
+  var moving = false;
+  var picker = { open: false, col: 0, ids: [] };
+  var okDown = false, holdTimer = null, holdFired = false;
+  var pointerQuietUntil = 0;
+  var fills = {};   // tile background per app id, computed once
+  var tints = {};   // ambient colour per app id
 
   function loadDock() {
     try {
       var saved = JSON.parse(localStorage.getItem(STORE));
-      if (saved && saved.length) return saved.filter(function (id) { return byId[id]; });
+      if (saved) {
+        saved = saved.filter(function (id) { return byId[id]; });
+        if (saved.length) return saved;
+      }
     } catch (e) {}
     return DEFAULT_DOCK.slice();
   }
   function saveDock() { try { localStorage.setItem(STORE, JSON.stringify(dock)); } catch (e) {} }
 
-  function items(r) {
-    if (r === 0) return dock;
-    return CATALOG.map(function (a) { return a.id; }).filter(function (id) { return dock.indexOf(id) < 0; });
+  // ---- items per row ------------------------------------------------------------
+  function items(r) { return r === 0 ? dock.concat([ADD]) : CHANNELS; }
+  function current() { return items(row)[col[row]]; }
+  function info(r, item) {
+    if (r === 1) return { title: item.name, hint: 'Channel ' + item.num + '  •  OK to watch', tint: item.color };
+    if (item === ADD) return { title: 'Add an app', hint: 'OK to choose from all your apps', tint: '#1c1c1e' };
+    return { title: byId[item].title, hint: moving ? '◀ ▶ move   •   ▼ remove   •   OK done' : 'Hold OK to move or remove', tint: tints[item] };
   }
 
-  function tile(id) {
-    var a = byId[id], el = document.createElement('div');
+  // ---- tiles --------------------------------------------------------------------
+  function appTile(id) {
+    var a = byId[id], el = document.createElement('div'), clip = document.createElement('div');
     el.className = 'tile';
+    clip.className = 'clip';
+    el.appendChild(clip);
     if (a.icon) {
-      if (a.color) { el.style.background = a.color; tints[id] = a.color; }
       var img = new Image();
-      img.onload = function () { if (!a.color) tintFrom(img, id, el); };
+      if (fills[id]) clip.style.background = fills[id];
+      else if (a.color) { clip.style.background = fills[id] = tints[id] = a.color; }
+      else img.onload = function () { tintFrom(img, id, clip); };
       img.src = a.icon;
-      el.appendChild(img);
+      clip.appendChild(img);
     } else {
-      el.insertAdjacentHTML('beforeend', a.glyph);
-      el.style.background = a.color;
-      tints[id] = a.color;
+      clip.insertAdjacentHTML('beforeend', a.glyph);
+      clip.style.background = fills[id] = tints[id] = a.color;
     }
-    var shine = document.createElement('div');
-    shine.className = 'shine';
-    el.appendChild(shine);
+    clip.insertAdjacentHTML('beforeend', '<div class="shine"></div>');
     return el;
   }
 
-  // Tile background = icon's average colour, darkened slightly, so every tile looks native.
-  function tintFrom(img, id, el) {
+  function addTile() {
+    var el = document.createElement('div');
+    el.className = 'tile';
+    el.innerHTML = '<div class="clip" style="background:#1c1c1e">' + PLUS + '</div>';
+    return el;
+  }
+
+  function chanTile(c) {
+    var el = document.createElement('div');
+    el.className = 'tile chan';
+    el.innerHTML = '<div class="clip" style="background:' + c.color + '"><div class="num"></div><div class="name"></div><div class="shine"></div></div>';
+    el.querySelector('.num').textContent = c.num;
+    el.querySelector('.name').textContent = c.name;
+    return el;
+  }
+
+  // Tile fill = icon's average colour. Line-art icons (mostly transparent) stay graphite.
+  function tintFrom(img, id, clip) {
     try {
       var c = document.createElement('canvas');
       c.width = c.height = 8;
@@ -61,135 +90,263 @@
       }
       if (!n) return;
       var k = 0.8 / n, col = 'rgb(' + (r * k | 0) + ',' + (g * k | 0) + ',' + (b * k | 0) + ')';
-      // line-art icons (mostly transparent) vanish on their own colour: keep them on graphite
-      if (clear <= 16) el.style.background = col;
       tints[id] = col;
-      if (current() === id) paintHero();
+      if (clear <= 16) clip.style.background = fills[id] = col;
+      else fills[id] = '#2c2c2e';
+      if (current() === id) paint();
     } catch (e) { /* canvas tainted: keep default grey */ }
   }
 
-  function render() {
-    rows.forEach(function (rowEl, r) {
-      var track = rowEl.firstElementChild, list = items(r);
-      track.innerHTML = '';
-      list.forEach(function (id, i) {
-        var el = tile(id);
-        el.onmouseenter = function () { if (!moving) focus(r, i); };
-        el.onclick = function () { if (!moving) launch(id); };
-        track.appendChild(el);
-      });
-      if (col[r] >= list.length) col[r] = Math.max(0, list.length - 1);
+  function buildRow(r) {
+    var track = rowEls[r].firstElementChild;
+    track.innerHTML = '';
+    items(r).forEach(function (item) {
+      var el = r === 1 ? chanTile(item) : item === ADD ? addTile() : appTile(item);
+      bindPointer(el, r);
+      track.appendChild(el);
     });
-    document.querySelector('#moreLabel').style.display = items(1).length ? '' : 'none';
-    focus(row, col[row]);
+    if (col[r] >= items(r).length) col[r] = items(r).length - 1;
   }
 
-  function current() { return items(row)[col[row]]; }
+  // Magic Remote: hovering focuses without scrolling the row, so a tile sliding under a
+  // still pointer can't trigger another move.
+  function bindPointer(el, r) {
+    function index() { return Array.prototype.indexOf.call(el.parentNode.children, el); }
+    el.onmouseenter = function () {
+      if (moving || picker.open || Date.now() < pointerQuietUntil) return;
+      focus(r, index(), true);
+    };
+    el.onclick = function () {
+      if (moving || picker.open) return;
+      focus(r, index(), true);
+      activate();
+    };
+  }
 
-  function focus(r, c) {
-    if (!items(r).length) return;
+  // ---- focus & scrolling --------------------------------------------------------
+  function tileAt(r, c) { return rowEls[r].firstElementChild.children[c]; }
+
+  function focus(r, c, fromPointer) {
+    var prev = document.querySelector('.row .tile.focus');
+    if (prev) prev.classList.remove('focus', 'moving', 'press');
     row = r; col[r] = c;
-    var prev = document.querySelectorAll('.tile.focus');
-    for (var i = 0; i < prev.length; i++) prev[i].classList.remove('focus', 'moving');
-    var track = rows[r].firstElementChild, el = track.children[c];
+    var el = tileAt(r, c);
     el.classList.add('focus');
     if (moving) el.classList.add('moving');
-    rows[0].classList.toggle('dim', r !== 0);
-    rows[1].classList.toggle('dim', r !== 1);
-    // keep the focused tile on screen
-    // scroll only when the focused tile would leave the row, Apple TV style
-    var view = 1920 - 2 * 112, pad = el.offsetWidth * 0.1;
+    if (!fromPointer) scrollTo(r, el);
+    paint();
+  }
+
+  function scrollTo(r, el) {
+    var view = 1920 - 2 * ROW_PAD, pad = el.offsetWidth * 0.1;
+    var left = el.offsetLeft - ROW_PAD, right = left + el.offsetWidth;
     var s = shift[r];
-    if (el.offsetLeft + el.offsetWidth + pad - s > view) s = el.offsetLeft + el.offsetWidth + pad - view;
-    if (el.offsetLeft - pad < s) s = Math.max(0, el.offsetLeft - pad);
-    shift[r] = s;
-    track.style.transform = 'translateX(' + (-s) + 'px)';
-    paintHero();
-  }
-
-  var shownTitle = '';
-  function paintHero() {
-    var id = current(), title = document.querySelector('#title');
-    if (byId[id].title !== shownTitle) {
-      // re-trigger the rise: jump to the "out" pose with no transition, then let it ease back
-      shownTitle = byId[id].title;
-      title.textContent = shownTitle;
-      title.classList.add('out');
-      void title.offsetWidth;
-      title.classList.remove('out');
+    if (right + pad - s > view) s = right + pad - view;
+    if (left - pad < s) s = Math.max(0, left - pad);
+    if (s !== shift[r]) {
+      shift[r] = s;
+      rowEls[r].firstElementChild.style.transform = 'translateX(' + (-s) + 'px)';
+      pointerQuietUntil = Date.now() + 500;
     }
-    document.querySelector('#hint').textContent = moving
-      ? '◀ ▶ move   •   ▼ remove from dock   •   OK done'
-      : (row === 0 ? 'Hold OK to rearrange' : 'Hold OK to add to dock');
-    document.querySelector('#ambient').style.backgroundColor = tints[id] || '#1c1c1e';
   }
 
-  var bridge = null;
-  function launch(id) {
-    // PalmServiceBridge is the low-level luna bus the webOS JS library wraps.
+  var ambient = [document.getElementById('ambA'), document.getElementById('ambB')], ambOn = 0, ambColor = '';
+  var titleEl = document.getElementById('title'), hintEl = document.getElementById('hint');
+  function paint() {
+    var it = info(row, current());
+    if (titleEl.textContent !== it.title) titleEl.textContent = it.title;
+    if (hintEl.textContent !== it.hint) hintEl.textContent = it.hint;
+    var colr = it.tint || '#1c1c1e';
+    if (colr !== ambColor) {
+      // crossfade: paint the hidden layer, then swap opacities (compositor-only)
+      ambColor = colr;
+      var next = 1 - ambOn;
+      ambient[next].style.backgroundColor = colr;
+      ambient[next].classList.add('on');
+      ambient[ambOn].classList.remove('on');
+      ambOn = next;
+    }
+  }
+
+  function nudge(dir) {
+    var el = tileAt(row, col[row]), cls = dir < 0 ? 'nudgeL' : 'nudgeR';
+    el.classList.remove('nudgeL', 'nudgeR');
+    void el.offsetWidth;
+    el.classList.add(cls);
+    setTimeout(function () { el.classList.remove(cls); }, 160);
+  }
+
+  // ---- actions ------------------------------------------------------------------
+  var toastEl = document.getElementById('toast'), toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('on'); }, 2500);
+  }
+
+  var bridges = [];
+  function luna(uri, params, cb) {
+    // PalmServiceBridge is the luna bus the webOS JS library wraps. Keep a reference
+    // until the reply arrives or it can be garbage-collected mid-call.
     try {
-      bridge = new PalmServiceBridge();
-      bridge.onservicecallback = function () {};
-      bridge.call('luna://com.webos.applicationManager/launch', JSON.stringify({ id: id }));
-    } catch (e) { console.log('launch failed', id, e); }
+      var b = new PalmServiceBridge();
+      bridges.push(b);
+      b.onservicecallback = function (msg) {
+        bridges.splice(bridges.indexOf(b), 1);
+        var res = {};
+        try { res = JSON.parse(msg); } catch (e) {}
+        if (cb) cb(res);
+      };
+      b.call(uri, JSON.stringify(params));
+    } catch (e) { if (cb) cb({ returnValue: false, errorText: String(e) }); }
   }
 
-  function move(dir) {
+  function launch(id) {
+    luna('luna://com.webos.applicationManager/launch', { id: id }, function (res) {
+      if (res.returnValue === false) toast('Couldn\'t open ' + (byId[id] ? byId[id].title : id));
+    });
+  }
+
+  function watch(c) {
+    Ssap.openChannel(c.num).catch(function () {
+      // no pairing key or channel missing after a rescan: open Live TV on its last channel
+      toast('Opening Live TV (couldn\'t tune ' + c.num + ')');
+      launch('com.webos.app.livetv');
+    });
+  }
+
+  function activate() {
+    var it = current();
+    if (row === 1) watch(it);
+    else if (it === ADD) openPicker();
+    else launch(it);
+  }
+
+  function moveDock(dir) {
     var c = col[0], n = c + dir;
-    if (n < 0 || n >= dock.length) return;
+    if (n < 0 || n >= dock.length) return nudge(dir);
     var t = dock[c]; dock[c] = dock[n]; dock[n] = t;
-    col[0] = n;
-    saveDock(); render();
+    // swap the DOM nodes instead of rebuilding, so nothing flashes
+    var track = rowEls[0].firstElementChild, a = track.children[c], b = track.children[n];
+    if (dir > 0) track.insertBefore(b, a); else track.insertBefore(a, b);
+    saveDock();
+    focus(0, n);
+  }
+
+  function removeFromDock() {
+    if (dock.length <= 1) return;
+    dock.splice(col[0], 1);
+    moving = false;
+    saveDock();
+    buildRow(0);
+    focus(0, Math.min(col[0], dock.length - 1));
   }
 
   function onHold() {
     holdFired = true;
-    if (row === 0) { moving = true; focus(0, col[0]); }
-    else { dock.push(current()); saveDock(); row = 0; col[0] = dock.length - 1; render(); }
+    if (row === 0 && current() !== ADD && !picker.open) { moving = true; focus(0, col[0]); }
   }
 
+  // ---- picker -------------------------------------------------------------------
+  var pickerEl = document.getElementById('picker'), grid = document.getElementById('grid');
+  var PER_ROW = 6;
+  function openPicker() {
+    picker.ids = CATALOG.map(function (a) { return a.id; }).filter(function (id) { return dock.indexOf(id) < 0; });
+    if (!picker.ids.length) return toast('Every app is already in the dock');
+    grid.innerHTML = '';
+    picker.ids.forEach(function (id, i) {
+      var el = appTile(id), cap = document.createElement('div');
+      cap.className = 'cap';
+      cap.textContent = byId[id].title;
+      el.appendChild(cap);
+      el.onmouseenter = function () { pickerFocus(i); };
+      el.onclick = function () { pickerFocus(i); pickerAdd(); };
+      grid.appendChild(el);
+    });
+    picker.open = true;
+    pickerEl.hidden = false;
+    pickerFocus(0);
+  }
+  function closePicker() { picker.open = false; pickerEl.hidden = true; }
+  function pickerFocus(i) {
+    var prev = grid.querySelector('.tile.focus');
+    if (prev) prev.classList.remove('focus');
+    picker.col = i;
+    grid.children[i].classList.add('focus');
+  }
+  function pickerAdd() {
+    dock.push(picker.ids[picker.col]);
+    saveDock();
+    closePicker();
+    buildRow(0);
+    focus(0, dock.length - 1);
+  }
+  function pickerKey(k) {
+    var i = picker.col, n = picker.ids.length;
+    if (k === KEY.LEFT && i % PER_ROW) pickerFocus(i - 1);
+    else if (k === KEY.RIGHT && i % PER_ROW < PER_ROW - 1 && i + 1 < n) pickerFocus(i + 1);
+    else if (k === KEY.UP && i >= PER_ROW) pickerFocus(i - PER_ROW);
+    else if (k === KEY.DOWN && i + PER_ROW < n) pickerFocus(i + PER_ROW);
+    else if (k === KEY.BACK) closePicker();
+  }
+
+  // ---- keys ---------------------------------------------------------------------
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode;
-    if (k === KEY.OK) {
-      if (!okDownAt) { okDownAt = Date.now(); holdFired = false; holdTimer = setTimeout(onHold, HOLD_MS); }
-      e.preventDefault(); return;
-    }
-    if (moving) {
-      if (k === KEY.LEFT) move(-1);
-      else if (k === KEY.RIGHT) move(1);
-      else if (k === KEY.DOWN && dock.length > 1) { dock.splice(col[0], 1); moving = false; saveDock(); render(); }
-      else if (k === KEY.BACK) { moving = false; focus(0, col[0]); }
-      e.preventDefault(); return;
-    }
-    if (k === KEY.LEFT && col[row] > 0) focus(row, col[row] - 1);
-    else if (k === KEY.RIGHT && col[row] < items(row).length - 1) focus(row, col[row] + 1);
-    else if (k === KEY.DOWN && row === 0 && items(1).length) focus(1, Math.min(col[1], items(1).length - 1));
-    else if (k === KEY.UP && row === 1) focus(0, col[0]);
     e.preventDefault();
+    if (k === KEY.OK) {
+      if (!okDown) {
+        okDown = true; holdFired = false;
+        holdTimer = setTimeout(onHold, HOLD_MS);
+        var f = document.querySelector('.tile.focus');
+        if (f && !moving) f.classList.add('press');
+      }
+      return;
+    }
+    if (picker.open) return pickerKey(k);
+    if (moving) {
+      if (k === KEY.LEFT) moveDock(-1);
+      else if (k === KEY.RIGHT) moveDock(1);
+      else if (k === KEY.DOWN) removeFromDock();
+      else if (k === KEY.BACK) { moving = false; focus(0, col[0]); }
+      return;
+    }
+    var n = items(row).length;
+    if (k === KEY.LEFT) { if (col[row] > 0) focus(row, col[row] - 1); else nudge(-1); }
+    else if (k === KEY.RIGHT) { if (col[row] < n - 1) focus(row, col[row] + 1); else nudge(1); }
+    else if (k === KEY.DOWN && row === 0) focus(1, col[1]);
+    else if (k === KEY.UP && row === 1) focus(0, col[0]);
   });
 
   document.addEventListener('keyup', function (e) {
-    if (e.keyCode !== KEY.OK) return;
+    if (e.keyCode !== KEY.OK || !okDown) return;
+    okDown = false;
     clearTimeout(holdTimer);
-    okDownAt = 0;
+    var f = document.querySelector('.tile.press');
+    if (f) f.classList.remove('press');
     if (holdFired) return;
-    if (moving) { moving = false; focus(0, col[0]); }
-    else launch(current());
+    if (picker.open) pickerAdd();
+    else if (moving) { moving = false; focus(0, col[0]); }
+    else activate();
   });
 
+  // A lost keyup (app hidden mid-press) must not leave OK stuck down.
+  function resetKeys() { okDown = false; clearTimeout(holdTimer); }
+  window.addEventListener('blur', resetKeys);
+  document.addEventListener('visibilitychange', resetKeys);
+
+  // ---- clock --------------------------------------------------------------------
   function tick() {
     var d = new Date(), h = d.getHours(), m = d.getMinutes();
-    document.querySelector('#time').textContent = ((h + 11) % 12 + 1) + ':' + (m < 10 ? '0' : '') + m;
-    document.querySelector('#date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+    document.getElementById('time').textContent = ((h + 11) % 12 + 1) + ':' + (m < 10 ? '0' : '') + m;
+    document.getElementById('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   }
   tick(); setInterval(tick, 10000);
 
-  render();
-  // stagger the first-paint rise, then drop the class so re-renders don't replay it
-  var all = document.querySelectorAll('.tile');
-  for (var i = 0; i < all.length; i++) all[i].style.animationDelay = Math.min(i, 10) * 45 + 'ms';
-  setTimeout(function () {
-    document.body.classList.remove('enter');
-    for (var i = 0; i < all.length; i++) all[i].style.animationDelay = '';
-  }, 1200);
+  buildRow(0);
+  buildRow(1);
+  focus(0, 0);
+  requestAnimationFrame(function () { document.body.classList.remove('enter'); });
+  Ssap.connect().catch(function () {});  // warm the socket so the first channel tunes fast
 })();
