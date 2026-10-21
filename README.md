@@ -43,6 +43,18 @@ webOS doesn't let a developer app replace the Home button or start at boot witho
 
 ## Keeping Developer Mode alive
 
-`./devmode.sh schedule` installs a launchd job on the Mac that resets the session timer every day at 12:00 (and on wake if the Mac was asleep), so the 1000h never runs out as long as the Mac is used at least once a month. It reads the session token from the TV and calls LG's `ResetDevModeSession` endpoint, which is the same thing the **Extend** button in the Developer Mode app does. The token is cached in `~/.config/ronnie-lg/devmode-token` (never in the repo), so it keeps working when the TV is off. Each run is logged to `~/Library/Logs/ronnie-lg-devmode.log`, and a failed run shows a macOS notification.
+The **Extend Developer Mode** GitHub Actions workflow (`.github/workflows/devmode.yml`) resets the session timer to 1000h every day from GitHub's servers, so it works with the Mac and TV off. It calls LG's `ResetDevModeSession` endpoint, the same thing the **Extend** button in the Developer Mode app does, using the TV's session token stored as the repository secret `DEVMODE_TOKEN` (never in the repo). A failed run shows up red in the Actions tab and GitHub emails you.
 
-To turn it off: `./devmode.sh unschedule` (then delete `~/.config/ronnie-lg/` if you like). If you reinstall the Developer Mode app the token changes; the next run picks up the new one automatically while the TV is on.
+One-time setup, from this folder with the TV on:
+
+```sh
+./devmode.sh status                       # reads the token from the TV and caches it in ~/.config/ronnie-lg/
+gh secret set DEVMODE_TOKEN -R ronald-ho/ronnie-lg < ~/.config/ronnie-lg/devmode-token
+gh workflow run devmode.yml -R ronald-ho/ronnie-lg   # optional: run it now
+```
+
+If you reinstall the Developer Mode app the token changes: run the two commands above again.
+
+To turn it off: disable the workflow in the repo's Actions tab (or delete the file), and delete the `DEVMODE_TOKEN` secret if you like.
+
+`./devmode.sh extend` resets the timer by hand. If you'd rather run it from the Mac instead of GitHub, `./devmode.sh schedule` installs a daily launchd job (log in `~/Library/Logs/ronnie-lg-devmode.log`, notification on failure) and `./devmode.sh unschedule` removes it.
