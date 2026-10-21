@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run a shell command on the TV's developer-mode SSH (jailed "prisoner" user).
+DIR=$(cd "$(dirname "$0")" && pwd)
+SSH_ASKPASS="$DIR/askpass.sh" SSH_ASKPASS_REQUIRE=force exec ssh -o StrictHostKeyChecking=accept-new \
+  -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+  -i "$HOME/.ssh/tv_webos" -p 9922 prisoner@192.168.4.103 "$@" </dev/null
