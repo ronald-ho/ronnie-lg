@@ -1,0 +1,38 @@
+# Resets the TV's Developer Mode session timer to 1000h every day, from GitHub's servers.
+# Needs the repository secret DEVMODE_TOKEN (see "Keeping Developer Mode alive" in the README).
+# To stop it: disable this workflow in the Actions tab, or delete this file.
+name: Extend Developer Mode
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: [.github/workflows/devmode.yml]
+
+permissions:
+  actions: write
+
+jobs:
+  extend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset the session timer
+        env:
+          TOKEN: ${{ secrets.DEVMODE_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || { echo "::error::DEVMODE_TOKEN secret is not set"; exit 1; }
+          api=https://developer.lge.com/secure
+          check() { curl -sS --retry 3 "$api/CheckDevModeSession.dev?sessionToken=$TOKEN"; }
+          echo "before: $(check)"
+          reset=$(curl -sS --retry 3 "$api/ResetDevModeSession.dev?sessionToken=$TOKEN")
+          after=$(check)
+          echo "reset: $reset"; echo "after: $after"
+          echo "$reset" | grep -q '"result":"success"' || { echo "::error::LG rejected the reset (token changed? see README)"; exit 1; }
+          echo "$after" | grep -q '"errorMsg":"99[0-9]:' || { echo "::error::Timer did not reset"; exit 1; }
+      # GitHub turns off scheduled workflows after 60 days without repo activity; re-enabling keeps it on.
+      - name: Keep the schedule alive
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/devmode.yml/enable"
