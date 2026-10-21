@@ -181,7 +181,7 @@
       void next.offsetWidth;
       next.classList.add('on');
       clearTimeout(ambTimer);
-      ambTimer = setTimeout(function () { prev.classList.remove('on'); }, 550);
+      ambTimer = setTimeout(function () { prev.classList.remove('on'); }, 400);
       ambOn = 1 - ambOn;
     }
   }
