@@ -1,0 +1,10 @@
+# Device-specific: holds the TV serial number, screenshots and your app list
+backup/
+dist/
+tools/node/
+tools/node_modules/
+# Pairing secrets
+tools/ssap-key.json
+tools/askpass.sh
+tools/apps-now.json
+.DS_Store
