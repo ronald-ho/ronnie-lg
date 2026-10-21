@@ -23,7 +23,7 @@ const PERMISSIONS = [
 
 function connect() {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`wss://${HOST}:3001`, { rejectUnauthorized: false });
+    const ws = new WebSocket(`wss://${HOST}:3001`, { rejectUnauthorized: false, handshakeTimeout: 8000 });
     let id = 0;
     const pending = new Map();
     ws.on('error', reject);

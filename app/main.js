@@ -134,7 +134,19 @@
     el.classList.add('focus');
     if (moving) el.classList.add('moving');
     if (!fromPointer) scrollTo(r, el);
+    if (r === 1) Ssap.warm();  // pair and fetch the channel list before OK is pressed
     paint();
+  }
+
+  // Moving between rows lands on the tile visually closest to the current one.
+  function nearest(r) {
+    var from = tileAt(row, col[row]).getBoundingClientRect(), x = from.left + from.width / 2;
+    var tiles = rowEls[r].firstElementChild.children, best = 0, bestD = Infinity;
+    for (var i = 0; i < tiles.length; i++) {
+      var b = tiles[i].getBoundingClientRect(), d = Math.abs(b.left + b.width / 2 - x);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
   }
 
   function scrollTo(r, el) {
@@ -150,7 +162,7 @@
     }
   }
 
-  var ambient = [document.getElementById('ambA'), document.getElementById('ambB')], ambOn = 0, ambColor = '';
+  var ambient = [document.getElementById('ambA'), document.getElementById('ambB')], ambOn = 0, ambColor = '', ambTimer;
   var titleEl = document.getElementById('title'), hintEl = document.getElementById('hint');
   function paint() {
     var it = info(row, current());
@@ -159,12 +171,18 @@
     var colr = it.tint || '#1c1c1e';
     if (colr !== ambColor) {
       // crossfade: paint the hidden layer, then swap opacities (compositor-only)
+      // fade the new layer in on top of the old one, so the wash never dims mid-move
       ambColor = colr;
-      var next = 1 - ambOn;
-      ambient[next].style.backgroundColor = colr;
-      ambient[next].classList.add('on');
-      ambient[ambOn].classList.remove('on');
-      ambOn = next;
+      var next = ambient[1 - ambOn], prev = ambient[ambOn];
+      next.classList.remove('on');
+      next.style.backgroundColor = colr;
+      next.style.zIndex = 1;
+      prev.style.zIndex = 0;
+      void next.offsetWidth;
+      next.classList.add('on');
+      clearTimeout(ambTimer);
+      ambTimer = setTimeout(function () { prev.classList.remove('on'); }, 550);
+      ambOn = 1 - ambOn;
     }
   }
 
@@ -216,7 +234,11 @@
     });
   }
 
+  var lastActivate = 0;
   function activate() {
+    // the Magic Remote can deliver both a click and an OK key for one press
+    if (Date.now() - lastActivate < 300) return;
+    lastActivate = Date.now();
     var it = current();
     if (row === 1) watch(it);
     else if (it === ADD) openPicker();
@@ -236,6 +258,7 @@
 
   function removeFromDock() {
     if (dock.length <= 1) return;
+    toast('Removed ' + byId[dock[col[0]]].title + ' from the dock');
     dock.splice(col[0], 1);
     moving = false;
     saveDock();
@@ -244,8 +267,8 @@
   }
 
   function onHold() {
-    holdFired = true;
-    if (row === 0 && current() !== ADD && !picker.open) { moving = true; focus(0, col[0]); }
+    // only dock apps have a hold action; a long press anywhere else still activates on release
+    if (row === 0 && current() !== ADD && !picker.open && !moving) { holdFired = true; moving = true; focus(0, col[0]); }
   }
 
   // ---- picker -------------------------------------------------------------------
@@ -261,7 +284,11 @@
       cap.textContent = byId[id].title;
       el.appendChild(cap);
       el.onmouseenter = function () { pickerFocus(i); };
-      el.onclick = function () { pickerFocus(i); pickerAdd(); };
+      el.onclick = function () {
+        if (Date.now() - lastActivate < 300) return;
+        lastActivate = Date.now();
+        pickerFocus(i); pickerAdd();
+      };
       grid.appendChild(el);
     });
     picker.open = true;
@@ -274,6 +301,9 @@
     if (prev) prev.classList.remove('focus');
     picker.col = i;
     grid.children[i].classList.add('focus');
+    // keep the focused row on screen: three rows fit, scroll past that
+    var line = Math.floor(i / PER_ROW);
+    grid.style.transform = 'translateY(' + (-Math.max(0, line - 2) * 220) + 'px)';
   }
   function pickerAdd() {
     dock.push(picker.ids[picker.col]);
@@ -299,7 +329,7 @@
       if (!okDown) {
         okDown = true; holdFired = false;
         holdTimer = setTimeout(onHold, HOLD_MS);
-        var f = document.querySelector('.tile.focus');
+        var f = (picker.open ? grid : rowEls[row]).querySelector('.tile.focus');
         if (f && !moving) f.classList.add('press');
       }
       return;
@@ -315,8 +345,8 @@
     var n = items(row).length;
     if (k === KEY.LEFT) { if (col[row] > 0) focus(row, col[row] - 1); else nudge(-1); }
     else if (k === KEY.RIGHT) { if (col[row] < n - 1) focus(row, col[row] + 1); else nudge(1); }
-    else if (k === KEY.DOWN && row === 0) focus(1, col[1]);
-    else if (k === KEY.UP && row === 1) focus(0, col[0]);
+    else if (k === KEY.DOWN && row === 0) focus(1, nearest(1));
+    else if (k === KEY.UP && row === 1) focus(0, nearest(0));
   });
 
   document.addEventListener('keyup', function (e) {
@@ -326,7 +356,11 @@
     var f = document.querySelector('.tile.press');
     if (f) f.classList.remove('press');
     if (holdFired) return;
-    if (picker.open) pickerAdd();
+    if (picker.open) {
+      if (Date.now() - lastActivate < 300) return;
+      lastActivate = Date.now();
+      pickerAdd();
+    }
     else if (moving) { moving = false; focus(0, col[0]); }
     else activate();
   });
@@ -348,5 +382,4 @@
   buildRow(1);
   focus(0, 0);
   requestAnimationFrame(function () { document.body.classList.remove('enter'); });
-  Ssap.connect().catch(function () {});  // warm the socket so the first channel tunes fast
 })();

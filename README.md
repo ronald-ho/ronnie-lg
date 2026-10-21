@@ -35,6 +35,8 @@ The first `tools/ssap.js` call shows a pairing prompt on the TV; accept it. That
 | `node tools/ssap.js shot out.jpg` | Screenshot of whatever is on the TV |
 | `node tools/press.js RIGHT,OK:hold` | Presses keys inside the running app (via the web inspector) |
 
+Pairing: `tools/ssap-key.json` (and `app/ssap-key.js`, which `install.sh` builds from it so the app can tune channels) holds a key with broad remote-control permissions on the TV. Both are gitignored. `restore.sh` doesn't remove the pairing; to revoke it, reset the TV's connected devices in Settings › General › External Devices (menu names vary by firmware).
+
 The app only adds one developer app (`com.ronald.home`). It changes no settings and doesn't touch LG's launcher, so restoring is just removing it.
 
 ## Limits

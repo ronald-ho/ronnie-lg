@@ -14,10 +14,16 @@ APP_ID=com.ronald.home
 STATUS=0
 
 echo "== Removing $APP_ID"
-if ares-install -d tv --list | grep -qx "$APP_ID"; then
+# Can't trust "not in the list" unless listing itself worked (TV off, Dev Mode expired...)
+if ! LIST=$(ares-install -d tv --list 2>&1); then
+  echo "   FAILED: can't reach the TV's developer mode:"; echo "$LIST" | sed 's/^/   /'; exit 1
+fi
+if echo "$LIST" | grep -qx "$APP_ID"; then
   ares-install -d tv --remove "$APP_ID"
 fi
-if ares-install -d tv --list | grep -qx "$APP_ID"; then
+if ! LIST=$(ares-install -d tv --list 2>&1); then
+  echo "   FAILED: couldn't re-check the app list:"; echo "$LIST" | sed 's/^/   /'; STATUS=1
+elif echo "$LIST" | grep -qx "$APP_ID"; then
   echo "   FAILED: $APP_ID is still installed"; STATUS=1
 else
   echo "   OK: $APP_ID is not installed"

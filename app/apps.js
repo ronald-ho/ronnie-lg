@@ -3,6 +3,7 @@
 var HDMI = '<svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><path d="M6 16h36v10l-5 6H11l-5-6z"/><path d="M14 22h20" stroke-linecap="round"/></svg>';
 var GEAR = '<svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="3"><circle cx="24" cy="24" r="6"/><path d="M24 5v6M24 37v6M5 24h6M37 24h6M10.6 10.6l4.2 4.2M33.2 33.2l4.2 4.2M10.6 37.4l4.2-4.2M33.2 14.8l4.2-4.2" stroke-linecap="round"/></svg>';
 var SWITCH = '<svg viewBox="0 0 48 48"><rect x="8" y="6" width="14" height="36" rx="7" fill="#fff"/><rect x="26" y="6" width="14" height="36" rx="7" fill="none" stroke="#fff" stroke-width="3"/><circle cx="15" cy="16" r="3" fill="#e60012"/><circle cx="33" cy="30" r="3" fill="#fff"/></svg>';
+var TV = '<svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="6" y="10" width="36" height="24" rx="3"/><path d="M17 40h14M24 34v6" stroke-linecap="round"/></svg>';
 window.PLUS = '<svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round"><path d="M24 12v24M12 24h24"/></svg>';
 
 window.CATALOG = [
@@ -12,7 +13,7 @@ window.CATALOG = [
   { id: 'tv.twitch.tv.starshot.lg', title: 'Twitch', icon: 'icons/tv.twitch.tv.starshot.lg.png' },
   { id: 'com.accedo.mi9.prod', title: '9Now', icon: 'icons/com.accedo.mi9.prod.png' },
   { id: 'com.webos.app.hdmi1', title: 'Nintendo Switch', glyph: SWITCH, color: '#e60012' },
-  { id: 'com.webos.app.livetv', title: 'Live TV', glyph: HDMI, color: '#3a3a3c' },
+  { id: 'com.webos.app.livetv', title: 'Live TV', glyph: TV, color: '#3a3a3c' },
   { id: 'com.webos.app.browser', title: 'Web Browser', icon: 'icons/com.webos.app.browser.png' },
   { id: 'com.webos.app.mediadiscovery', title: 'Media Player', icon: 'icons/com.webos.app.mediadiscovery.png' },
   { id: 'com.webos.app.hdmi2', title: 'Sonos (HDMI 2)', glyph: HDMI, color: '#3a3a3c' },
