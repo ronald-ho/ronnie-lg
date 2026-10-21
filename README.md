@@ -30,6 +30,7 @@ The first `tools/ssap.js` call shows a pairing prompt on the TV; accept it. That
 | --- | --- |
 | `./backup.sh` | Saves the installed apps, launcher entries, inputs and a screenshot to `backup/` |
 | `./install.sh` | Packages, installs and launches the app, then screenshots it (needs a backup first) |
+| `./devmode.sh status` / `extend` | Shows the Developer Mode time left / resets it to 1000h |
 | `./restore.sh` | Uninstalls the app, checks the app list matches the backup, screenshots the TV |
 | `node tools/ssap.js shot out.jpg` | Screenshot of whatever is on the TV |
 | `node tools/press.js RIGHT,OK:hold` | Presses keys inside the running app (via the web inspector) |
@@ -38,4 +39,10 @@ The app only adds one developer app (`com.ronald.home`). It changes no settings 
 
 ## Limits
 
-webOS doesn't let a developer app replace the Home button or start at boot without rooting the TV. Open it from the LG launcher (it's called **Home**), or move it to the front of the LG app bar. Developer Mode sessions expire unless extended in the Developer Mode app; when one lapses, developer apps stop opening until it is renewed.
+webOS doesn't let a developer app replace the Home button or start at boot without rooting the TV. Open it from the LG launcher (it's called **Home**), or move it to the front of the LG app bar. Developer Mode sessions expire after 1000h unless extended; when one lapses, developer apps stop opening until it is renewed.
+
+## Keeping Developer Mode alive
+
+`./devmode.sh schedule` installs a launchd job on the Mac that resets the session timer every day at 12:00 (and on wake if the Mac was asleep), so the 1000h never runs out as long as the Mac is used at least once a month. It reads the session token from the TV and calls LG's `ResetDevModeSession` endpoint, which is the same thing the **Extend** button in the Developer Mode app does. The token is cached in `~/.config/ronnie-lg/devmode-token` (never in the repo), so it keeps working when the TV is off. Each run is logged to `~/Library/Logs/ronnie-lg-devmode.log`, and a failed run shows a macOS notification.
+
+To turn it off: `./devmode.sh unschedule` (then delete `~/.config/ronnie-lg/` if you like). If you reinstall the Developer Mode app the token changes; the next run picks up the new one automatically while the TV is on.
