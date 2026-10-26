@@ -15,7 +15,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 CACHE="$HOME/.config/ronnie-lg/devmode-token"
 LOG="$HOME/Library/Logs/ronnie-lg-devmode.log"
 API=https://developer.lge.com/secure
-TV_IP=${TV_IP:-192.168.4.103}
+TV_IP=${TV_IP:-${TV_HOST:-192.168.4.36}}
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG"; }
 

@@ -9,7 +9,7 @@ const https = require('https');
 const http = require('http');
 const WebSocket = require('ws');
 
-const HOST = process.env.TV_HOST || '192.168.4.103';
+const HOST = process.env.TV_HOST || '192.168.4.36';
 const KEY_FILE = path.join(__dirname, 'ssap-key.json');
 
 const PERMISSIONS = [
